@@ -14,23 +14,25 @@
 // limitations under the License.
 //
 
-package com.google.privacy.differentialprivacy;
+package com.google.privacy.differentialprivacy.statistical;
 
 import static com.google.common.truth.Truth.assertThat;
-import static com.google.differentialprivacy.testing.StatisticalTests.NoiseType.GAUSSIAN;
-import static com.google.differentialprivacy.testing.StatisticalTests.NoiseType.LAPLACE;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import com.google.common.base.Supplier;
 import com.google.differentialprivacy.testing.StatisticalTests.CountDpTestCase;
 import com.google.differentialprivacy.testing.StatisticalTests.CountDpTestCaseCollection;
 import com.google.differentialprivacy.testing.StatisticalTests.CountSamplingParameters;
 import com.google.differentialprivacy.testing.StatisticalTests.DpTestParameters;
+import com.google.privacy.differentialprivacy.Count;
+import com.google.privacy.differentialprivacy.GaussianNoise;
+import com.google.privacy.differentialprivacy.LaplaceNoise;
+import com.google.privacy.differentialprivacy.Noise;
 import com.google.privacy.differentialprivacy.testing.StatisticalTestsUtil;
 import com.google.privacy.differentialprivacy.testing.VotingUtil;
 import com.google.protobuf.TextFormat;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.function.Supplier;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -48,7 +50,7 @@ public final class CountDpTest {
   }
 
   @Parameterized.Parameters
-  public static Iterable<? extends Object> testCases() {
+  public static Iterable<?> testCases() {
     return getTestCaseCollectionFromFile().getCountDpTestCaseList();
   }
 
@@ -112,7 +114,7 @@ public final class CountDpTest {
         .isTrue();
   }
 
-  private int getNumberOfVotesFromFile() {
+  private static int getNumberOfVotesFromFile() {
     return getTestCaseCollectionFromFile().getVotingParameters().getNumberOfVotes();
   }
 

@@ -18,12 +18,15 @@
 #define DIFFERENTIAL_PRIVACY_ALGORITHMS_UTIL_H_
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <numeric>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 #include "base/logging.h"
+#include "absl/base/attributes.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
 #include "base/statusor.h"
@@ -40,6 +43,7 @@ std::string XorStrings(const std::string& longer, const std::string& shorter);
 // this value whenever one is not provided. This value should only be used for
 // testing convenience. For any production use case, please set your own epsilon
 // based on privacy needs.
+ABSL_DEPRECATED("Use your own epsilon based on privacy considerations.")
 double DefaultEpsilon();
 
 // Returns the smallest power of 2 greater than or equal to n. n must be > 0.
@@ -121,6 +125,34 @@ inline bool SafeSquare(T num, T* result) {
   if (num > 0 && num > static_cast<T>(max_root)) return false;
   if (num < 0 && num < -1 * static_cast<T>(max_root)) return false;
   *result = num * num;
+  return true;
+}
+
+// Tries to convert a double value to an integral values while avoiding
+// overflows.  Returns whether the cast was successful and has been written to
+// `out`.
+template <typename T, std::enable_if_t<std::is_integral<T>::value>* = nullptr>
+inline bool SafeCastFromDouble(const double in, T& out) {
+  if (std::isnan(in)) {
+    // Integral types do not support NaN values.
+    return false;
+  } else if (in >= std::numeric_limits<T>::max()) {
+    out = std::numeric_limits<T>::max();
+    return true;
+  } else if (in <= std::numeric_limits<T>::lowest()) {
+    out = std::numeric_limits<T>::lowest();
+    return true;
+  }
+  out = T{in};
+  return true;
+}
+
+// Convert double to other floating points.  This should be mostly a no-op since
+// we are typically only using doubles.
+template <typename T,
+          std::enable_if_t<std::is_floating_point<T>::value>* = nullptr>
+inline bool SafeCastFromDouble(const double in, T& out) {
+  out = T{in};
   return true;
 }
 
@@ -207,7 +239,7 @@ double Correlation(const std::vector<T>& x, const std::vector<T>& y) {
 // selected elements in v, preserving order.
 template <typename T>
 std::vector<T> VectorFilter(const std::vector<T>& v,
-                            const std::vector<bool> selection) {
+                            const std::vector<bool>& selection) {
   std::vector<T> result;
   DCHECK(v.size() == selection.size());
   for (int i = 0; i < std::min(v.size(), selection.size()); ++i) {

@@ -14,17 +14,18 @@
 // limitations under the License.
 //
 
-package examples
+package com.google.privacy.differentialprivacy;
 
-import (
-	"time"
-)
+import com.google.auto.value.AutoValue;
 
-// Visit stores data about single visit of a visitor to the restaurant.
-type Visit struct {
-	VisitorID    int64
-	VisitTime    time.Time
-	MinutesSpent int64
-	EurosSpent   int64
-	Day          int
+/** Stores the upper and lower bounds of a confidence interval. */
+@AutoValue
+public abstract class ConfidenceInterval {
+  public static ConfidenceInterval create(double lowerBound, double upperBound) {
+    return new AutoValue_ConfidenceInterval(lowerBound, upperBound);
+  }
+
+  public abstract double lowerBound();
+
+  public abstract double upperBound();
 }

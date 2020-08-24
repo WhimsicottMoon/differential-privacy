@@ -253,17 +253,11 @@ class PrivacyLossDistribution(object):
     # Discretize the probability mass so that the values are integer multiples
     # of value_discretization_interval
     rounded_probability_mass_function = collections.defaultdict(lambda: 0)
+    round_fn = math.ceil if pessimistic_estimate else math.floor
     for val in probability_mass_function:
-      if pessimistic_estimate:
-        # When we would like a pessimistic estimate, round the value up.
-        rounded_probability_mass_function[int(
-            math.ceil(val / value_discretization_interval)
-        )] += probability_mass_function[val]
-      else:
-        # When we would like an optimistic estimate, round the value down.
-        rounded_probability_mass_function[int(
-            math.floor(val / value_discretization_interval)
-        )] += probability_mass_function[val]
+      rounded_probability_mass_function[
+          round_fn(val / value_discretization_interval)
+          ] += probability_mass_function[val]
 
     return cls(rounded_probability_mass_function, value_discretization_interval,
                infinity_mass)
@@ -356,8 +350,13 @@ class PrivacyLossDistribution(object):
     return cls(rounded_probability_mass_function, value_discretization_interval,
                0)
 
-  def hockey_stick_divergence(self, epsilon: float) -> float:
+  def get_delta_for_epsilon(self, epsilon: float) -> float:
     """Computes the epsilon-hockey stick divergence between mu_upper, mu_lower.
+
+    When this privacy loss distribution corresponds to a mechanism, the
+    epsilon-hockey stick divergence gives the value of delta for which the
+    mechanism is (epsilon, delta)-differentially private. (See Observation 1 in
+    the supplementary material.)
 
     Args:
       epsilon: the epsilon in epsilon-hockey stick divergence.
@@ -380,6 +379,48 @@ class PrivacyLossDistribution(object):
                        self.rounded_probability_mass_function[i])
 
     return divergence
+
+  def get_epsilon_for_delta(self, delta: float) -> float:
+    """Computes epsilon for which hockey stick divergence is at most delta.
+
+    This function computes the smallest non-negative epsilon for which the
+    epsilon-hockey stick divergence between mu_upper, mu_lower is at most delta.
+
+    When this privacy loss distribution corresponds to a mechanism and the
+    rounding is pessimistic, the returned value corresponds to an epsilon for
+    which the mechanism is (epsilon, delta)-differentially private. (See
+    Observation 1 in the supplementary material.)
+
+    Args:
+      delta: the target epsilon-hockey stick divergence.
+
+    Returns:
+      A non-negative real number which is the smallest epsilon such that the
+      epsilon-hockey stick divergence between the upper (mu_upper) and the
+      lower (mu_lower) distributions is at most delta. When no such finite
+      epsilon exists, return math.inf.
+    """
+
+    if self.infinity_mass > delta:
+      return math.inf
+
+    mass_upper = self.infinity_mass
+    mass_lower = 0
+    for i in sorted(
+        self.rounded_probability_mass_function.keys(), reverse=True):
+      val = i * self.value_discretization_interval
+
+      if mass_upper - math.exp(val) * mass_lower >= delta:
+        # Epsilon is greater than or equal to val.
+        break
+
+      mass_upper += self.rounded_probability_mass_function[i]
+      mass_lower += (math.exp(-val) * self.rounded_probability_mass_function[i])
+
+    if mass_upper <= mass_lower + delta:
+      return 0
+    else:
+      return math.log((mass_upper - delta) / mass_lower)
 
   def compose(
       self, privacy_loss_distribution: 'PrivacyLossDistribution'
@@ -573,8 +614,12 @@ class AdditiveNoisePrivacyLossDistribution(
         dict(rounded_probability_mass_function), value_discretization_interval,
         infinity_mass)
 
-  def hockey_stick_divergence(self, epsilon):
+  def get_delta_for_epsilon(self, epsilon):
     """Computes the epsilon-hockey stick divergence of the mechanism.
+
+    The epsilon-hockey stick divergence of the mechanism is the value of delta
+    for which the mechanism is (epsilon, delta)-differentially private. (See
+    Observation 1 in the supplementary material.)
 
     This function assumes the privacy loss is non-increasing as x increases.
     Under this assumption, the hockey stick divergence is simply
@@ -1038,7 +1083,7 @@ class GaussianPrivacyLossDistribution(AdditiveNoisePrivacyLossDistribution):
     while GaussianPrivacyLossDistribution(
         upper_standard_deviation,
         sensitivity=sensitivity,
-        log_mass_truncation_bound=0).hockey_stick_divergence(
+        log_mass_truncation_bound=0).get_delta_for_epsilon(
             privacy_parameters.epsilon) > privacy_parameters.delta:
       upper_standard_deviation *= 2
 
@@ -1050,7 +1095,7 @@ class GaussianPrivacyLossDistribution(AdditiveNoisePrivacyLossDistribution):
       if GaussianPrivacyLossDistribution(
           mid_standard_deviation,
           sensitivity=sensitivity,
-          log_mass_truncation_bound=0).hockey_stick_divergence(
+          log_mass_truncation_bound=0).get_delta_for_epsilon(
               privacy_parameters.epsilon) <= privacy_parameters.delta:
         upper_standard_deviation = mid_standard_deviation
       else:

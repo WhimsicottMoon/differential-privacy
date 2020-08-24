@@ -40,11 +40,11 @@ class ZeroNoiseMechanism : public LaplaceMechanism {
 
     base::StatusOr<std::unique_ptr<NumericalMechanism>> Build() override {
       return base::StatusOr<std::unique_ptr<LaplaceMechanism>>(
-          absl::make_unique<ZeroNoiseMechanism>(epsilon_.value_or(1),
-                                               l1_sensitivity_.value_or(1)));
+          absl::make_unique<ZeroNoiseMechanism>(GetEpsilon().value_or(1),
+                                               GetL1Sensitivity().value_or(1)));
     }
 
-    std::unique_ptr<LaplaceMechanism::Builder> Clone() const override {
+    std::unique_ptr<NumericalMechanismBuilder> Clone() const override {
       return absl::make_unique<Builder>(*this);
     }
   };
@@ -132,18 +132,18 @@ class SeededLaplaceMechanism : public LaplaceMechanism {
 
     base::StatusOr<std::unique_ptr<NumericalMechanism>> Build() override {
       double sensitivity;
-      if (l1_sensitivity_.has_value()) {
-        sensitivity = *l1_sensitivity_;
+      if (GetL1Sensitivity().has_value()) {
+        sensitivity = *GetL1Sensitivity();
       } else {
         sensitivity =
-            l0_sensitivity_.value_or(1) * linf_sensitivity_.value_or(1);
+            GetL0Sensitivity().value_or(1) * GetLInfSensitivity().value_or(1);
       }
       return base::StatusOr<std::unique_ptr<LaplaceMechanism>>(
-          absl::make_unique<SeededLaplaceMechanism>(epsilon_.value_or(1),
+          absl::make_unique<SeededLaplaceMechanism>(GetEpsilon().value_or(1),
                                                    sensitivity, rand_gen_));
     }
 
-    std::unique_ptr<LaplaceMechanism::Builder> Clone() const override {
+    std::unique_ptr<NumericalMechanismBuilder> Clone() const override {
       return absl::make_unique<Builder>(*this);
     }
 
@@ -184,7 +184,7 @@ class MockLaplaceMechanism : public LaplaceMechanism {
 
     MockLaplaceMechanism* mock() { return mock_.get(); }
 
-    std::unique_ptr<LaplaceMechanism::Builder> Clone() const override {
+    std::unique_ptr<NumericalMechanismBuilder> Clone() const override {
       return absl::make_unique<MockLaplaceMechanism::Builder>();
     }
 

@@ -57,7 +57,8 @@ class BoundedSum : public Algorithm<T> {
     }
 
    private:
-    base::StatusOr<std::unique_ptr<BoundedSum<T>>> BuildAlgorithm() override {
+    base::StatusOr<std::unique_ptr<BoundedSum<T>>> BuildBoundedAlgorithm()
+        override {
       // Ensure that either bounds are manually set or ApproxBounds is made.
       RETURN_IF_ERROR(BoundedBuilder::BoundsSetup());
 
@@ -65,27 +66,28 @@ class BoundedSum : public Algorithm<T> {
       // sensitivity is inappropriate.
       std::unique_ptr<NumericalMechanism> mechanism = nullptr;
       if (BoundedBuilder::BoundsAreSet()) {
-        RETURN_IF_ERROR(CheckLowerBound(BoundedBuilder::lower_.value()));
+        RETURN_IF_ERROR(CheckLowerBound(BoundedBuilder::GetLower().value()));
         ASSIGN_OR_RETURN(
             mechanism,
-            BuildMechanism(AlgorithmBuilder::mechanism_builder_->Clone(),
-                           AlgorithmBuilder::epsilon_.value(),
-                           AlgorithmBuilder::l0_sensitivity_.value_or(1),
-                           AlgorithmBuilder::linf_sensitivity_.value_or(1),
-                           BoundedBuilder::lower_.value(),
-                           BoundedBuilder::upper_.value()));
+            BuildMechanism(
+                AlgorithmBuilder::GetMechanismBuilderClone(),
+                AlgorithmBuilder::GetEpsilon().value(),
+                AlgorithmBuilder::GetMaxPartitionsContributed().value_or(1),
+                AlgorithmBuilder::GetMaxContributionsPerPartition().value_or(1),
+                BoundedBuilder::GetLower().value(),
+                BoundedBuilder::GetUpper().value()));
       }
 
       // Construct BoundedSum.
-      auto mech_builder = AlgorithmBuilder::mechanism_builder_->Clone();
-      return absl::WrapUnique(
-          new BoundedSum(AlgorithmBuilder::epsilon_.value(),
-                         BoundedBuilder::lower_.value_or(0),
-                         BoundedBuilder::upper_.value_or(0),
-                         AlgorithmBuilder::l0_sensitivity_.value_or(1),
-                         AlgorithmBuilder::linf_sensitivity_.value_or(1),
-                         std::move(mech_builder), std::move(mechanism),
-                         std::move(BoundedBuilder::approx_bounds_)));
+      auto mech_builder = AlgorithmBuilder::GetMechanismBuilderClone();
+      return absl::WrapUnique(new BoundedSum(
+          AlgorithmBuilder::GetEpsilon().value(),
+          BoundedBuilder::GetLower().value_or(0),
+          BoundedBuilder::GetUpper().value_or(0),
+          AlgorithmBuilder::GetMaxPartitionsContributed().value_or(1),
+          AlgorithmBuilder::GetMaxContributionsPerPartition().value_or(1),
+          std::move(mech_builder), std::move(mechanism),
+          std::move(BoundedBuilder::MoveApproxBoundsPointer())));
     }
   };
 
@@ -197,15 +199,15 @@ class BoundedSum : public Algorithm<T> {
  protected:
   // Protected constructor to allow for testing.
   BoundedSum(double epsilon, T lower, T upper, const double l0_sensitivity,
-             const double linf_sensitivity,
-             std::unique_ptr<LaplaceMechanism::Builder> mechanism_builder,
+             const double max_contributions_per_partition,
+             std::unique_ptr<NumericalMechanismBuilder> mechanism_builder,
              std::unique_ptr<NumericalMechanism> mechanism,
              std::unique_ptr<ApproxBounds<T>> approx_bounds = nullptr)
       : Algorithm<T>(epsilon),
         lower_(lower),
         upper_(upper),
         l0_sensitivity_(l0_sensitivity),
-        linf_sensitivity_(linf_sensitivity),
+        max_contributions_per_partition_(max_contributions_per_partition),
         mechanism_builder_(std::move(mechanism_builder)),
         mechanism_(std::move(mechanism)),
         approx_bounds_(std::move(approx_bounds)) {
@@ -269,7 +271,7 @@ class BoundedSum : public Algorithm<T> {
           mechanism_,
           BuildMechanism(mechanism_builder_->Clone(),
                          Algorithm<T>::GetEpsilon(), l0_sensitivity_,
-                         linf_sensitivity_, lower_, upper_));
+                         max_contributions_per_partition_, lower_, upper_));
     }
 
     // Add noise confidence interval to the error report.
@@ -283,7 +285,9 @@ class BoundedSum : public Algorithm<T> {
     // Add noise to sum. Use the remaining privacy budget.
     double noisy_sum = mechanism_->AddNoise(sum, remaining_budget);
     if (std::is_integral<T>::value) {
-      AddToOutput<T>(&output, std::round(noisy_sum));
+      T value;
+      SafeCastFromDouble<T>(std::round(noisy_sum), value);
+      AddToOutput<T>(&output, value);
     } else {
       AddToOutput<T>(&output, noisy_sum);
     }
@@ -312,12 +316,13 @@ class BoundedSum : public Algorithm<T> {
   }
 
   static base::StatusOr<std::unique_ptr<NumericalMechanism>> BuildMechanism(
-      std::unique_ptr<LaplaceMechanism::Builder> mechanism_builder,
+      std::unique_ptr<NumericalMechanismBuilder> mechanism_builder,
       const double epsilon, const double l0_sensitivity,
-      const double linf_sensitivity, const T lower, const T upper) {
+      const double max_contributions_per_partition, const T lower,
+      const T upper) {
     return mechanism_builder->SetEpsilon(epsilon)
         .SetL0Sensitivity(l0_sensitivity)
-        .SetLInfSensitivity(linf_sensitivity *
+        .SetLInfSensitivity(max_contributions_per_partition *
                             std::max(std::abs(lower), std::abs(upper)))
         .Build();
   }
@@ -330,9 +335,9 @@ class BoundedSum : public Algorithm<T> {
   T lower_, upper_;
 
   // Used to construct mechanism once bounds are obtained for auto-bounding.
-  std::unique_ptr<LaplaceMechanism::Builder> mechanism_builder_;
+  std::unique_ptr<NumericalMechanismBuilder> mechanism_builder_;
   const double l0_sensitivity_;
-  const double linf_sensitivity_;
+  const int max_contributions_per_partition_;
 
   // Will be available upon BoundedSum for manual bounding, and constructed upon
   // GenerateResult for auto-bounding.

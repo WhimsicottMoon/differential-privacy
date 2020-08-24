@@ -14,51 +14,50 @@
 // limitations under the License.
 //
 
-package com.google.privacy.differentialprivacy;
+package com.google.privacy.differentialprivacy.statistical;
 
 import static com.google.common.truth.Truth.assertThat;
-import static com.google.differentialprivacy.testing.StatisticalTests.NoiseType.GAUSSIAN;
-import static com.google.differentialprivacy.testing.StatisticalTests.NoiseType.LAPLACE;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import com.google.common.base.Supplier;
-import com.google.differentialprivacy.testing.StatisticalTests.BoundedMeanDpTestCase;
-import com.google.differentialprivacy.testing.StatisticalTests.BoundedMeanDpTestCaseCollection;
-import com.google.differentialprivacy.testing.StatisticalTests.BoundedMeanSamplingParameters;
+import com.google.differentialprivacy.testing.StatisticalTests.BoundedSumDpTestCase;
+import com.google.differentialprivacy.testing.StatisticalTests.BoundedSumDpTestCaseCollection;
+import com.google.differentialprivacy.testing.StatisticalTests.BoundedSumSamplingParameters;
 import com.google.differentialprivacy.testing.StatisticalTests.DpTestParameters;
+import com.google.privacy.differentialprivacy.BoundedSum;
+import com.google.privacy.differentialprivacy.GaussianNoise;
+import com.google.privacy.differentialprivacy.LaplaceNoise;
+import com.google.privacy.differentialprivacy.Noise;
 import com.google.privacy.differentialprivacy.testing.StatisticalTestsUtil;
 import com.google.privacy.differentialprivacy.testing.VotingUtil;
 import com.google.protobuf.TextFormat;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.function.Supplier;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
-/**
- * Tests that {@link BoundedMean} conforms to the specified privacy parameters epsilon and delta.
- */
+/** Tests that {@link BoundedSum} conforms to the specified privacy parameters epsilon and delta. */
 @RunWith(Parameterized.class)
-public final class BoundedMeanDpTest {
+public final class BoundedSumDpTest {
   private static final String TEST_CASES_FILE_PATH =
+      "external/com_google_differential_privacy/proto/testing/bounded_sum_dp_test_cases.textproto";
 
-  "external/com_google_differential_privacy/proto/testing/bounded_mean_dp_test_cases.textproto";
+  private final BoundedSumDpTestCase testCase;
 
-  private final BoundedMeanDpTestCase testCase;
-
-  public BoundedMeanDpTest(BoundedMeanDpTestCase testCase) {
+  public BoundedSumDpTest(BoundedSumDpTestCase testCase) {
     this.testCase = testCase;
   }
 
   @Parameterized.Parameters
-  public static Iterable<? extends Object> testCases() {
-    return getTestCaseCollectionFromFile().getBoundedMeanDpTestCaseList();
+  public static Iterable<?> testcases() {
+    return getTestCaseCollectionFromFile().getBoundedSumDpTestCaseList();
   }
 
   @Test
-  public void boundedMeanDpTest() {
+  public void boundedSumDpTest() {
 
-    BoundedMeanSamplingParameters samplingParameters = testCase.getBoundedMeanSamplingParameters();
+    BoundedSumSamplingParameters samplingParameters = testCase.getBoundedSumSamplingParameters();
     DpTestParameters dpTestParameters = testCase.getDpTestParameters();
 
     Noise noise;
@@ -77,39 +76,38 @@ public final class BoundedMeanDpTest {
             "Noise type " + samplingParameters.getNoiseType() + " is not supported");
     }
 
-    BoundedMean.Params.Builder boundedMeanBuilder =
-        BoundedMean.builder()
+    BoundedSum.Params.Builder boundedSumBuilder =
+        BoundedSum.builder()
             .epsilon(samplingParameters.getEpsilon())
             .delta(delta)
             .maxPartitionsContributed(samplingParameters.getMaxPartitionsContributed())
-            .maxContributionsPerPartition(samplingParameters.getMaxContributionsPerPartition())
             .lower(samplingParameters.getLowerBound())
             .upper(samplingParameters.getUpperBound())
             .noise(noise);
 
-    Supplier<Double> boundedMeanGenerator =
+    Supplier<Double> boundedSumGenerator =
         () -> {
-          BoundedMean boundedMean = boundedMeanBuilder.build();
+          BoundedSum boundedSum = boundedSumBuilder.build();
           for (double entry : samplingParameters.getRawEntryList()) {
-            boundedMean.addEntry(entry);
+            boundedSum.addEntry(entry);
           }
-          return boundedMean.computeResult();
+          return boundedSum.computeResult();
         };
-    Supplier<Double> neighbourBoundedMeanGenerator =
+    Supplier<Double> neighbourBoundedSumGenerator =
         () -> {
-          BoundedMean boundedMean = boundedMeanBuilder.build();
+          BoundedSum boundedSum = boundedSumBuilder.build();
           for (double entry : samplingParameters.getNeighbourRawEntryList()) {
-            boundedMean.addEntry(entry);
+            boundedSum.addEntry(entry);
           }
-          return boundedMean.computeResult();
+          return boundedSum.computeResult();
         };
 
     assertThat(
             VotingUtil.runBallot(
                 () ->
                     generateVote(
-                        boundedMeanGenerator,
-                        neighbourBoundedMeanGenerator,
+                        boundedSumGenerator,
+                        neighbourBoundedSumGenerator,
                         samplingParameters.getNumberOfSamples(),
                         dpTestParameters.getEpsilon(),
                         dpTestParameters.getDelta(),
@@ -119,18 +117,17 @@ public final class BoundedMeanDpTest {
         .isTrue();
   }
 
-  private int getNumberOfVotesFromFile() {
+  private static int getNumberOfVotesFromFile() {
     return getTestCaseCollectionFromFile().getVotingParameters().getNumberOfVotes();
   }
 
-  private static BoundedMeanDpTestCaseCollection getTestCaseCollectionFromFile() {
-    BoundedMeanDpTestCaseCollection.Builder testCaseCollectionBuilder =
-        BoundedMeanDpTestCaseCollection.newBuilder();
+  private static BoundedSumDpTestCaseCollection getTestCaseCollectionFromFile() {
+    BoundedSumDpTestCaseCollection.Builder testCaseCollectionBuilder =
+        BoundedSumDpTestCaseCollection.newBuilder();
     try {
       TextFormat.merge(
           new InputStreamReader(
-              BoundedMeanDpTest.class.getClassLoader().getResourceAsStream(TEST_CASES_FILE_PATH),
-              UTF_8),
+              BoundedSumDpTest.class.getClassLoader().getResourceAsStream(TEST_CASES_FILE_PATH), UTF_8),
           testCaseCollectionBuilder);
     } catch (IOException e) {
       throw new RuntimeException("Unable to read input.", e);

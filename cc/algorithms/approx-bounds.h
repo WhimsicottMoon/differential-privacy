@@ -24,6 +24,7 @@
 #include "base/status.h"
 #include "algorithms/algorithm.h"
 #include "algorithms/numerical-mechanisms.h"
+#include "algorithms/util.h"
 #include "proto/util.h"
 #include "base/status_macros.h"
 
@@ -166,12 +167,12 @@ class ApproxBounds : public Algorithm<T> {
         // Laplacian noise is added.
         k_ = -log(2 - 2 * std::pow(success_probability_,
                                    1.0 / (2 * num_bins_ - 1))) /
-             AlgorithmBuilder::epsilon_.value();
+             AlgorithmBuilder::GetEpsilon().value();
       }
 
       // Create ApproxBounds.
       return absl::WrapUnique(
-          new ApproxBounds(AlgorithmBuilder::epsilon_.value(), num_bins_,
+          new ApproxBounds(AlgorithmBuilder::GetEpsilon().value(), num_bins_,
                            scale_, base_, k_, has_k_, std::move(mechanism)));
     }
 
@@ -261,6 +262,10 @@ class ApproxBounds : public Algorithm<T> {
     if (value == 0) {
       return 0;
     }
+
+    // Clamp infinities to highest and lowest value.
+    value = Clamp(std::numeric_limits<T>::lowest(),
+                  std::numeric_limits<T>::max(), value);
 
     // Sometimes the minimum numeric limit has greater magnitude than the
     // maximum. In this case clamp its magnitude at the maximum numeric limit to
@@ -535,7 +540,9 @@ class ApproxBounds : public Algorithm<T> {
                                 const std::vector<int64_t>& bins) {
     std::vector<T> noisy_bins(bins.size());
     for (int i = 0; i < bins.size(); ++i) {
-      noisy_bins[i] = mechanism_->AddNoise(bins[i], privacy_budget);
+      double noised_dbl =
+          mechanism_->AddNoise(static_cast<double>(bins[i]), privacy_budget);
+      SafeCastFromDouble<T>(noised_dbl, noisy_bins[i]);
     }
     return noisy_bins;
   }
@@ -616,6 +623,7 @@ class ApproxBounds : public Algorithm<T> {
     return NumInputsOutside(0, 0);
   }
 
+ private:
   // Count the values in each logarithmic bin for positives and negatives.
   std::vector<int64_t> pos_bins_;
   std::vector<int64_t> neg_bins_;

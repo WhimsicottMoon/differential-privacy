@@ -17,51 +17,19 @@
 #ifndef DIFFERENTIAL_PRIVACY_ALGORITHMS_DISTRIBUTIONS_H_
 #define DIFFERENTIAL_PRIVACY_ALGORITHMS_DISTRIBUTIONS_H_
 
+#include <memory>
+
+#include <cstdint>
 #include "base/statusor.h"
 
 namespace differential_privacy {
 namespace internal {
-// DO NOT USE. Use LaplaceMechanism instead. LaplaceMechanism has several
-// improvements (snapping, conversion from DP parameters to laplace parameter)
-// that are error-prone to replicate.
-//
-// Allows samples to be drawn from a LegacyLaplaceDistribution over a given
-// parameter with optional per-sample scaling.
-// https://en.wikipedia.org/wiki/Laplace_distribution
-// LegacyLaplaceDistribution is thread compatible but not necessarily thread
-// safe.
-class LegacyLaplaceDistribution {
- public:
-  // Constructor for Laplace parameter b.
-  explicit LegacyLaplaceDistribution(double b);
-  explicit LegacyLaplaceDistribution(double epsilon, double sensitivity);
-
-  virtual ~LegacyLaplaceDistribution() {}
-
-  virtual double GetUniformDouble();
-
-  virtual double Sample();
-
-  // Samples the Laplacian with distribution Lap(scale*b)
-  virtual double Sample(double scale);
-
-  // Returns the parameter defining this distribution, often labeled b.
-  double GetDiversity();
-
-  // Returns the cdf of the laplacian distribution with scale b at point x.
-  static double cdf(double b, double x);
-
-  virtual int64_t MemoryUsed();
-
- private:
-  double b_;
-};
 
 // Allows samples to be drawn from a Gaussian distribution over a given stddev
 // and mean 0 with optional per-sample scaling.
 // The Gaussian noise is generated according to the binomial sampling mechanism
 // described in
-// https://github.com/google/differential-privacy/blob/master/common_docs/Secure_Noise_Generation.pdf
+// https://github.com/google/differential-privacy/blob/main/common_docs/Secure_Noise_Generation.pdf
 // This approach is robust against unintentional privacy leaks due to artifacts
 // of floating point arithmetic.
 class GaussianDistribution {
@@ -79,7 +47,10 @@ class GaussianDistribution {
   // Returns the standard deviation of this distribution.
   double Stddev();
 
-  double GetGranularity();
+  // Returns the granularity that is also used when calculating Sample(). Be
+  // careful when using GetGranularity() together with Sample() and make sure to
+  // use the same parameter for scale in such cases.
+  double GetGranularity(double scale) const;
 
  private:
   // Sample from geometric distribution with probability 0.5. It is much faster
@@ -88,7 +59,6 @@ class GaussianDistribution {
   double SampleBinomial(double sqrt_n);
 
   double stddev_;
-  double granularity_;
 };
 
 // Returns a sample drawn from the geometric distribution of probability
@@ -119,6 +89,10 @@ class GeometricDistribution {
 // ../../common_docs/Secure_Noise_Generation.pdf)
 base::StatusOr<double> CalculateGranularity(double epsilon, double sensitivity);
 
+// DO NOT USE. Use LaplaceMechanism instead. LaplaceMechanism has an interface
+// that directly accepts DP parameters, rather than requiring an error-prone
+// conversion to laplace parameters.
+//
 // Allows sampling from a secure laplace distribution, which uses a geometric
 // distribution to generate its noise in order to avoid the attack from
 // Mironov's 2012 paper, "On Significance of the Least Significant Bits For
@@ -144,6 +118,9 @@ class LaplaceDistribution {
 
   // Returns the parameter defining this distribution, often labeled b.
   double GetDiversity();
+
+  // Returns the cdf of the laplacian distribution with scale b at point x.
+  static double cdf(double b, double x);
 
  private:
   double epsilon_;

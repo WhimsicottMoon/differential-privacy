@@ -18,6 +18,7 @@
 #define DIFFERENTIAL_PRIVACY_ALGORITHMS_BOUNDED_ALGORITHM_H_
 
 #include <memory>
+#include <type_traits>
 
 #include "base/status.h"
 #include "algorithms/algorithm.h"
@@ -73,6 +74,10 @@ class BoundedAlgorithmBuilder : public AlgorithmBuilder<T, Algorithm, Builder> {
   }
 
  protected:
+  // This method needs to be overwritten by childs to build bounded algorithms.
+  virtual base::StatusOr<std::unique_ptr<Algorithm>>
+  BuildBoundedAlgorithm() = 0;
+
   // Returns whether bounds have been set for this builder.
   inline bool BoundsAreSet() {
     return lower_.has_value() && upper_.has_value();
@@ -82,16 +87,37 @@ class BoundedAlgorithmBuilder : public AlgorithmBuilder<T, Algorithm, Builder> {
     // If either bound is not set and we do not have an ApproxBounds,
     // construct the default one.
     if (!BoundsAreSet() && !approx_bounds_) {
-      auto mech_builder = AlgorithmBuilder::mechanism_builder_->Clone();
+      auto mech_builder = AlgorithmBuilder::GetMechanismBuilderClone();
       ASSIGN_OR_RETURN(approx_bounds_,
                        typename ApproxBounds<T>::Builder()
-                           .SetEpsilon(AlgorithmBuilder::epsilon_.value())
+                           .SetEpsilon(AlgorithmBuilder::GetEpsilon().value())
                            .SetLaplaceMechanism(std::move(mech_builder))
                            .Build());
+    }
+    // Check if bounds are finite when a floating point type is used and bounds
+    // have been set manually.
+    if (BoundsAreSet() && std::is_floating_point<T>::value) {
+      if (!std::isfinite(lower_.value())) {
+        return base::InvalidArgumentError(absl::StrCat(
+            "Lower bound has to be finite but is ", lower_.value()));
+      }
+      if (!std::isfinite(upper_.value())) {
+        return base::InvalidArgumentError(absl::StrCat(
+            "Upper bound has to be finite but is ", upper_.value()));
+      }
     }
     return base::OkStatus();
   }
 
+  std::unique_ptr<ApproxBounds<T>> MoveApproxBoundsPointer() {
+    return std::move(approx_bounds_);
+  }
+
+  absl::optional<T> GetLower() const { return lower_; }
+  absl::optional<T> GetUpper() const { return upper_; }
+  ApproxBounds<T>* GetApproxBounds() const { return approx_bounds_.get(); }
+
+ private:
   // Bounds are optional and do not need to be set.  If they are not set,
   // automatic bounds will be determined.
   absl::optional<T> lower_;
@@ -100,6 +126,20 @@ class BoundedAlgorithmBuilder : public AlgorithmBuilder<T, Algorithm, Builder> {
   // Used to automatically determine approximate mimimum and maximum to become
   // lower and upper bounds, respectively.
   std::unique_ptr<ApproxBounds<T>> approx_bounds_;
+
+  base::Status CheckBoundsOrder() {
+    if (BoundsAreSet() && lower_.value() > upper_.value()) {
+      return base::InvalidArgumentError(
+          "Lower bound cannot be greater than upper bound.");
+    }
+    return base::OkStatus();
+  }
+
+  // Common initialization and checks for building bounded algorithms.
+  base::StatusOr<std::unique_ptr<Algorithm>> BuildAlgorithm() final {
+    RETURN_IF_ERROR(CheckBoundsOrder());
+    return BuildBoundedAlgorithm();
+  }
 };
 
 }  // namespace differential_privacy
